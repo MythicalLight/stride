@@ -28,7 +28,7 @@ namespace Stride.Engine
         /// Higher values produce denser fog
         /// </userdoc>
         [Display("Density")]
-        public float DensityFactor { get; set; } = 0.2f;
+        public float DensityValue { get; set; } = 0.2f;
 
         /// <summary>
         /// Number of samples taken per pixel
