@@ -8,6 +8,7 @@ using Stride.Engine;
 using Stride.Engine.Design;
 using Stride.Engine.Processors;
 using Stride.Rendering;
+using Stride.Rendering.Images;
 using Stride.Rendering.Shadows;
 
 namespace Stride.Engine
@@ -17,10 +18,16 @@ namespace Stride.Engine
     /// </summary>
     [Display("Fog volume", Expand = ExpandRule.Always)]
     [DataContract("VolumeFogComponent")]
-    //[DefaultEntityComponentRenderer(typeof(LightShaftProcessor))] // EDIT THIS LATER
+    [DefaultEntityComponentRenderer(typeof(FogVolumeProcessor))] 
     [ComponentCategory("Lights")]
     public class VolumeFogComponent : ActivableEntityComponent
     {
+
+        private Model model;
+        private VolumeFogComponent fogVolume;
+        private bool enabled = true;
+
+
         /// <summary>
         /// Density of the fog
         /// </summary>
@@ -54,10 +61,6 @@ namespace Stride.Engine
 
 
 
-        private Model model;
-        
-        private bool enabled = true;
-
         public override bool Enabled
         {
             get { return enabled; }
@@ -73,6 +76,18 @@ namespace Stride.Engine
             set { model = value; ModelChanged?.Invoke(this, null); }
         }
 
+
+        /// <summary>
+        /// The light shaft to which the bounding volume applies
+        /// </summary>
+        public VolumeFogComponent FogVolume
+        {
+            get { return fogVolume; }
+            set { fogVolume = value; FogVolumeChanged?.Invoke(this, null); }
+        }
+
+
+        public event EventHandler FogVolumeChanged;
         public event EventHandler ModelChanged;
         public event EventHandler EnabledChanged;
     }

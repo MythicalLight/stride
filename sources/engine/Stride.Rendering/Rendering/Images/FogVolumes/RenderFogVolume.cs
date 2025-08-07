@@ -11,6 +11,7 @@ namespace Stride.Rendering.Images
         public int SampleCount;
         public float DensityValue;
         //public IReadOnlyList<RenderLightShaftBoundingVolume> BoundingVolumes;
+        public IReadOnlyList<RenderFogVolume> BoundingVolumes;
         public bool VolumetricCalculations;
         public Matrix World;
         public Model Model;

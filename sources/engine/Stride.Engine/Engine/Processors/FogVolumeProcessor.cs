@@ -1,4 +1,5 @@
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Stride.Core.Mathematics;
@@ -11,6 +12,11 @@ namespace Stride.Engine.Processors
 {
     public class FogVolumeProcessor : EntityProcessor<VolumeFogComponent, FogVolumeProcessor.AssociatedData>, IEntityComponentRenderProcessor
     {
+
+        private Dictionary<VolumeFogComponent, List<RenderFogVolume>> volumesPerFogVolume = new Dictionary<VolumeFogComponent, List<RenderFogVolume>>();
+        private bool isDirty;
+
+
         private readonly List<RenderFogVolume> activeFogVolumes = new List<RenderFogVolume>();
 
 
@@ -22,42 +28,6 @@ namespace Stride.Engine.Processors
                 return null;
             return data;
         }
-
-        protected override void OnEntityComponentAdding(Entity entity, VolumeFogComponent component, VolumeFogComponent data)
-        {
-            //component.LightShaftChanged += ComponentOnLightShaftChanged;
-            component.ModelChanged += ComponentOnModelChanged;
-            component.EnabledChanged += ComponentOnEnabledChanged;
-            isDirty = true;
-        }
-
-        protected override void OnEntityComponentRemoved(Entity entity, VolumeFogComponent component, VolumeFogComponent data)
-        {
-            //component.LightShaftChanged -= ComponentOnLightShaftChanged;
-            component.ModelChanged -= ComponentOnModelChanged;
-            component.EnabledChanged -= ComponentOnEnabledChanged;
-            isDirty = true;
-        }
-
-        private void ComponentOnEnabledChanged(object sender, EventArgs eventArgs)
-        {
-            isDirty = true;
-        }
-
-        private void ComponentOnModelChanged(object sender, EventArgs eventArgs)
-        {
-            isDirty = true;
-        }
-
-        //private void ComponentOnLightShaftChanged(object sender, EventArgs eventArgs)
-        //{
-        //    isDirty = true;
-        //}
-
-
-
-
-
 
 
 
@@ -93,8 +63,46 @@ namespace Stride.Engine.Processors
         protected override bool IsAssociatedDataValid(Entity entity, VolumeFogComponent component, AssociatedData associatedData)
         {
             return component == associatedData.Component; //&&
-                   //entity.Get<LightComponent>() == associatedData.LightComponent;
+                                                          //entity.Get<LightComponent>() == associatedData.LightComponent;
         }
+
+
+
+
+
+
+        
+
+        //private void ComponentOnEnabledChanged(object sender, EventArgs eventArgs)
+        //{
+        //    isDirty = true;
+        //}
+
+        //private void ComponentOnModelChanged(object sender, EventArgs eventArgs)
+        //{
+        //    isDirty = true;
+        //}
+
+
+
+
+
+
+
+        //private void ComponentOnLightShaftChanged(object sender, EventArgs eventArgs)
+        //{
+        //    isDirty = true;
+        //}
+
+
+
+
+
+
+
+
+
+        
 
         /// <inheritdoc />
         public override void Update(GameTime time)
@@ -116,7 +124,7 @@ namespace Stride.Engine.Processors
                 if (!pair.Key.Enabled)
                     continue;
 
-                //var lightShaft = pair.Value;
+                var fogVolume = pair.Value;
                 //if (lightShaft.LightComponent == null)
                 //    continue;
 
@@ -139,7 +147,7 @@ namespace Stride.Engine.Processors
                     //Light = light,
                     //Light2 = directLight,
                     SampleCount = fogVolume.Component.SampleCount,
-                    DensityValue = fogVolume.Component.DensityFactor,
+                    DensityValue = fogVolume.Component.DensityValue,
                     BoundingVolumes = boundingVolumes,
                     //SeparateBoundingVolumes = lightShaft.Component.SeparateBoundingVolumes,
                 });
