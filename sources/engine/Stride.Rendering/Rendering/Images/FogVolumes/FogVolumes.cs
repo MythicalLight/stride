@@ -45,7 +45,7 @@ namespace Stride.Rendering.Images
         /// </summary>
         private const float BackSideOrthographicSize = 0.0001f;
 
-        //##private ImageEffectShader lightShaftsEffectShader;
+        private ImageEffectShader lightShaftsEffectShader;
 
         private ImageEffectShader applyLightEffectShader;
         private DynamicEffectInstance minmaxVolumeEffectShader;
@@ -78,7 +78,7 @@ namespace Stride.Rendering.Images
             //!-applyLightEffectShader = ToLoadAndUnload(new ImageEffectShader("AdditiveLightEffect"));
             //!-applyLightEffectShader.BlendState = new BlendStateDescription(Blend.One, Blend.One);
 
-            minmaxVolumeEffectShader = new DynamicEffectInstance("VolumeMinMaxShaderFog");
+            minmaxVolumeEffectShader = new DynamicEffectInstance("VolumeMinMaxShader");
             minmaxVolumeEffectShader.Initialize(Context.Services);
 
             //!-blur = ToLoadAndUnload(new GaussianBlur());
@@ -120,24 +120,24 @@ namespace Stride.Rendering.Images
             PixelFormat lightBufferPixelFormat = needsColorLightBuffer ? PixelFormat.R16G16B16A16_Float : PixelFormat.R16_Float;
             var targetLightBufferSize = new Size2(Math.Max(1, depthInput.Width / LightBufferDownsampleLevel), Math.Max(1, depthInput.Height / LightBufferDownsampleLevel));
             var lightBuffer = NewScopedRenderTarget2D(targetLightBufferSize.Width, targetLightBufferSize.Height, lightBufferPixelFormat);
-            //##lightShaftsEffectShader.SetOutput(lightBuffer);
-            //###var lightShaftsParameters = lightShaftsEffectShader.Parameters; // CHANGE LATER ######
-            //##lightShaftsParameters.Set(DepthBaseKeys.DepthStencil, depthInput); // Bind scene depth
+            lightShaftsEffectShader.SetOutput(lightBuffer);
+            var lightShaftsParameters = lightShaftsEffectShader.Parameters; // CHANGE LATER ######
+            lightShaftsParameters.Set(DepthBaseKeys.DepthStencil, depthInput); // Bind scene depth
 
             if (!Initialized)
                 Initialize(context.RenderContext);
 
             var renderView = context.RenderContext.RenderView;
             var viewInverse = Matrix.Invert(renderView.View);
-            //###lightShaftsParameters.Set(TransformationKeys.ViewInverse, ref viewInverse);
-            //##lightShaftsParameters.Set(TransformationKeys.Eye, new Vector4(viewInverse.TranslationVector, 1));
+            lightShaftsParameters.Set(TransformationKeys.ViewInverse, ref viewInverse);
+            lightShaftsParameters.Set(TransformationKeys.Eye, new Vector4(viewInverse.TranslationVector, 1));
 
             // Setup parameters for Z reconstruction
-            //##lightShaftsParameters.Set(CameraKeys.ZProjection, CameraKeys.ZProjectionACalculate(renderView.NearClipPlane, renderView.FarClipPlane));
+            lightShaftsParameters.Set(CameraKeys.ZProjection, CameraKeys.ZProjectionACalculate(renderView.NearClipPlane, renderView.FarClipPlane));
 
             Matrix projectionInverse;
             Matrix.Invert(ref renderView.Projection, out projectionInverse);
-            //##lightShaftsParameters.Set(TransformationKeys.ProjectionInverse, projectionInverse);
+            lightShaftsParameters.Set(TransformationKeys.ProjectionInverse, projectionInverse);
 
             applyLightEffectShader.SetOutput(GetSafeOutput(0));
 
@@ -147,7 +147,7 @@ namespace Stride.Rendering.Images
                     //##continue; // Skip entities without a light component
 
                 // Set sample count for this light
-                //###lightShaftsParameters.Set(LightShaftsEffectKeys.SampleCount, fogVolume.SampleCount);
+                lightShaftsParameters.Set(LightShaftsEffectKeys.SampleCount, fogVolume.SampleCount);
 
 
 
@@ -162,7 +162,7 @@ namespace Stride.Rendering.Images
                     //###if (lightShaft.SeparateBoundingVolumes)
                     //##singleBoundingVolume[0] = lightShaft.BoundingVolumes[i];
 
-                    var currentBoundingVolumes = fogVolume.BoundingVolumes;
+                    var currentBoundingVolumes = singleBoundingVolume;
                     singleBoundingVolume[0] = fogVolume.BoundingVolumes[i];
 
                     using (context.PushRenderTargetsAndRestore())
@@ -185,7 +185,7 @@ namespace Stride.Rendering.Images
                     if (!lightBufferUsed)
                     {
                         // First pass: replace (avoid a clear and blend state)
-                        //###lightShaftsEffectShader.BlendState = BlendStates.Opaque;
+                        lightShaftsEffectShader.BlendState = BlendStates.Opaque;
                         lightBufferUsed = true;
                     }
                     else
@@ -193,15 +193,15 @@ namespace Stride.Rendering.Images
                         // Then: add
                         var desc = BlendStates.Additive;
                         desc.RenderTarget0.ColorSourceBlend = Blend.One; // But without multiplying alpha
-                        //###lightShaftsEffectShader.BlendState = desc;
+                        lightShaftsEffectShader.BlendState = desc;
                     }
 
                     if (fogVolume.SampleCount < 1)
                         throw new ArgumentOutOfRangeException(nameof(fogVolume.SampleCount));
 
                     // Set min/max input
-                    //###lightShaftsEffectShader.SetInput(0, boundingBoxBuffer);
-                    //###lightShaftsEffectShader.SetInput(1, backSideRaycastBuffer);
+                    lightShaftsEffectShader.SetInput(0, boundingBoxBuffer);
+                    lightShaftsEffectShader.SetInput(1, backSideRaycastBuffer);
 
                     // Light accumulation pass (on low resolution buffer)
                     //##DrawLightShaft(context, fogVolume);
@@ -229,7 +229,17 @@ namespace Stride.Rendering.Images
             }
 
             // Clean up unused render data
-            
+            unusedLights.Clear();
+            foreach (var data in renderData)
+            {
+                if (data.Value.UsageCounter != usageCounter)
+                    unusedLights.Add(data.Key);
+            }
+            foreach (var unusedLight in unusedLights)
+            {
+                renderData.Remove(unusedLight);
+            }
+            usageCounter++;
         }
 
         public void Draw(RenderDrawContext drawContext, Texture inputDepthStencil, Texture output)
@@ -239,9 +249,24 @@ namespace Stride.Rendering.Images
             Draw(drawContext);
         }
 
-        private void UpdateRenderData(RenderDrawContext context, FogVolumeRenderData data, RenderFogVolume fogVolume, LightShadowMapTexture shadowMapTexture)
+        private void UpdateRenderData(RenderDrawContext context, LightShaftRenderData data, RenderLightShaft lightShaft, LightShadowMapTexture shadowMapTexture)
         {
-            
+            if (lightShaft.Light2 is LightPoint)
+            {
+                data.GroupRenderer = new LightPointGroupRenderer();
+            }
+            else if (lightShaft.Light2 is LightSpot)
+            {
+                data.GroupRenderer = new LightSpotGroupRenderer();
+            }
+            else if (lightShaft.Light2 is LightDirectional)
+            {
+                data.GroupRenderer = new LightDirectionalGroupRenderer();
+            }
+            else
+            {
+                throw new InvalidOperationException("Unsupported light type");
+            }
 
             ILightShadowMapShaderGroupData shadowGroup = null;
             if (shadowMapTexture != null)
@@ -258,21 +283,61 @@ namespace Stride.Rendering.Images
             data.ShaderGroup = data.GroupRenderer.CreateLightShaderGroup(context, shadowGroup);   // TODO: Implement support for texture projection and attenuation?
         }
 
-        
-
-        private void DrawFogVolume(RenderDrawContext context, RenderFogVolume fogVolume)
+        private void SetupLight(RenderDrawContext context, RenderLightShaft lightShaft, LightShadowMapTexture shadowMapTexture, ParameterCollection lightParameterCollection)
         {
-            //###lightShaftsEffectShader.Parameters.Set(LightShaftsShaderKeys.DensityFactor, lightShaft.DensityFactor);
+            BoundingBoxExt box = new BoundingBoxExt(new Vector3(-float.MaxValue), new Vector3(float.MaxValue)); // TODO
 
-            //###lightShaftsEffectShader.Draw(context, "Light shaft");
+            LightShaftRenderData data;
+            if (!renderData.TryGetValue(lightShaft.Light2, out data))
+            {
+                data = new LightShaftRenderData();
+                renderData.Add(lightShaft.Light2, data);
+                UpdateRenderData(context, data, lightShaft, shadowMapTexture);
+            }
+
+            if (shadowMapTexture != null && data.ShadowMapRenderer != null)
+            {
+                // Detect changed shadow map renderer or type
+                if (data.ShadowMapRenderer != shadowMapTexture.Renderer || data.ShadowType != shadowMapTexture.ShadowType)
+                    UpdateRenderData(context, data, lightShaft, shadowMapTexture);
+            }
+            else if (shadowMapTexture?.Renderer != data.ShadowMapRenderer) // Change from no shadows to shadows
+            {
+                UpdateRenderData(context, data, lightShaft, shadowMapTexture);
+            }
+
+            data.RenderViews[0] = context.RenderContext.RenderView;
+            data.ShaderGroup.Reset();
+            data.ShaderGroup.SetViews(data.RenderViews);
+            data.ShaderGroup.AddView(0, context.RenderContext.RenderView, 1);
+
+            data.ShaderGroup.AddLight(lightShaft.Light, shadowMapTexture);
+            data.ShaderGroup.UpdateLayout("lightGroup");
+
+            lightParameterCollection.Set(LightShaftsEffectKeys.LightGroup, data.ShaderGroup.ShaderSource);
+
+            // Update the effect here so the layout is correct
+            lightShaftsEffectShader.EffectInstance.UpdateEffect(GraphicsDevice);
+
+            data.ShaderGroup.ApplyViewParameters(context, 0, lightParameterCollection);
+            data.ShaderGroup.ApplyDrawParameters(context, 0, lightParameterCollection, ref box);
+
+            data.UsageCounter = usageCounter;
         }
 
-        private bool DrawBoundingVolumeMinMax(RenderDrawContext context, IReadOnlyList<RenderFogVolume> boundingVolumes)
+        private void DrawLightShaft(RenderDrawContext context, RenderLightShaft lightShaft)
+        {
+            lightShaftsEffectShader.Parameters.Set(LightShaftsShaderKeys.DensityFactor, lightShaft.DensityFactor);
+
+            lightShaftsEffectShader.Draw(context, "Light shaft");
+        }
+
+        private bool DrawBoundingVolumeMinMax(RenderDrawContext context, IReadOnlyList<RenderLightShaftBoundingVolume> boundingVolumes)
         {
             return DrawBoundingVolumes(context, boundingVolumes, context.RenderContext.RenderView.ViewProjection);
         }
 
-        private void DrawBoundingVolumeBackside(RenderDrawContext context, IReadOnlyList<RenderFogVolume> boundingVolumes)
+        private void DrawBoundingVolumeBackside(RenderDrawContext context, IReadOnlyList<RenderLightShaftBoundingVolume> boundingVolumes)
         {
             float backSideMaximumDistance = context.RenderContext.RenderView.FarClipPlane;
             float backSideMinimumDistance = -context.RenderContext.RenderView.NearClipPlane;
@@ -280,7 +345,7 @@ namespace Stride.Rendering.Images
             DrawBoundingVolumes(context, boundingVolumes, backSideProjection);
         }
 
-        private bool DrawBoundingVolumes(RenderDrawContext context, IReadOnlyList<RenderFogVolume> boundingVolumes, Matrix viewProjection)
+        private bool DrawBoundingVolumes(RenderDrawContext context, IReadOnlyList<RenderLightShaftBoundingVolume> boundingVolumes, Matrix viewProjection)
         {
             var commandList = context.CommandList;
 
@@ -318,7 +383,7 @@ namespace Stride.Rendering.Images
 
                     // Update parameters for the minmax shader
                     Matrix worldViewProjection = Matrix.Multiply(volume.World, viewProjection);
-                    minmaxVolumeEffectShader.Parameters.Set(VolumeMinMaxShaderKeysFog.WorldViewProjection, ref worldViewProjection);
+                    minmaxVolumeEffectShader.Parameters.Set(VolumeMinMaxShaderKeys.WorldViewProjection, ref worldViewProjection);
 
                     foreach (var mesh in volume.Model.Meshes)
                     {
@@ -383,7 +448,7 @@ namespace Stride.Rendering.Images
             return visibleMeshes;
         }
 
-        private class FogVolumeRenderData
+        private class LightShaftRenderData
         {
             public LightGroupRendererDynamic GroupRenderer;
             public LightShaderGroupDynamic ShaderGroup;

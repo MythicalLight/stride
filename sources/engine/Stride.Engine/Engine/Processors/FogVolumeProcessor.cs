@@ -12,14 +12,12 @@ namespace Stride.Engine.Processors
 {
     public class FogVolumeProcessor : EntityProcessor<VolumeFogComponent, FogVolumeProcessor.AssociatedData>, IEntityComponentRenderProcessor
     {
-        private readonly List<RenderFogVolume> activeFogVolumes = new List<RenderFogVolume>();
-
 
         private Dictionary<VolumeFogComponent, List<RenderFogVolume>> volumesPerFogVolume = new Dictionary<VolumeFogComponent, List<RenderFogVolume>>();
         private bool isDirty;
 
 
-        
+        private readonly List<RenderFogVolume> activeFogVolumes = new List<RenderFogVolume>();
 
 
 
@@ -140,7 +138,7 @@ namespace Stride.Engine.Processors
                 //if (directLight == null)
                 //    continue;
 
-                var boundingVolumes = GetBoundingVolumesForComponent(fogVolume.Component);
+                var boundingVolumes = FogVolumeProcessor.GetBoundingVolumesForComponent(fogVolume.Component);
                 if (boundingVolumes == null)
                     continue;
 
